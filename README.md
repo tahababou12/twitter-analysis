@@ -1,4 +1,4 @@
-# Customer Support on Twitter Analysis Proposal
+# Customer Support on Twitter Analysis
 
 ```         
 By Taha Ababou
@@ -24,9 +24,11 @@ This question will guide my exploration of customer service engagement patterns 
 1.  **Exploratory Data Analysis (EDA)**
     -   **Timeline**: November 10 - November 14\
     -   **Tasks**: Review data structure, visualize distribution of response volumes and times, explore trends in engagement by time of day and sentiment, and identify patterns across brands.
+
 2.  **Data Processing**
     -   **Timeline**: November 15 - November 17\
     -   **Tasks**: Clean and preprocess the dataset, including datetime conversion for `created_at`, handling missing values, running sentiment analysis on `text`, and conducting NLP preprocessing (tokenization, removing stop words) for topic modeling.
+
 3.  **Modeling and Validation**
     -   **Timeline**: November 18 - November 25\
     -   **Tasks**:
@@ -36,6 +38,7 @@ This question will guide my exploration of customer service engagement patterns 
         -   **Topic Modeling for Common Issues**: Apply clustering techniques (e.g., LDA) on `text` to identify frequent customer issues.
         -   **Escalation Probability Prediction**: Develop a classification model to predict which tweets are likely to escalate into longer conversations, using initial sentiment and keyword features.
     -   **Validation**: Use Mean Absolute Error (MAE) and Mean Squared Error (MSE) for regression models and F1-score for classification tasks.
+
 4.  **Write-up and Documentation**
     -   **Timeline**: November 26 - November 30\
     -   **Tasks**: Summarize findings, document modeling processes, evaluate key insights, and offer implications for customer support strategies, such as optimal response times and suggested response strategies based on sentiment.
