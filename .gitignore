@@ -1,0 +1,8 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# data files that are too large
+data/misc/
+data/customer-support-on-twitter/
