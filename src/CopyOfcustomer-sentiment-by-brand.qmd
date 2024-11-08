@@ -1,0 +1,72 @@
+---
+title: "Customer Support on Twitter Analysis"
+author: "Taha Ababou"
+format: html
+---
+
+## Introduction
+
+This report analyzes customer support interactions on Twitter, focusing on identifying the first inbound messages from customers and their responses from companies.
+
+## Load Packages
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+
+# Load the dataset
+tweets <- read.csv('../data/customer-support-on-twitter/twcs/twcs.csv')
+str(tweets)
+```
+
+The data contains 2811774 observations with seven variables, including tweet IDs, author IDs, and timestamps.
+
+## Data Processing
+
+First, we will convert the `inbound` column to logical format so we can filter for inbound tweets more easily.
+
+```{r}
+# Convert the 'inbound' column to logical type
+tweets$inbound <- tweets$inbound == "True"
+```
+
+## Identifying First Inbound Messages
+
+Now, we filter the data to identify the first inbound customer messages that are not replies to previous tweets.
+
+```{r}
+# Pick only inbound tweets that aren't in reply to anything
+first_inbound <- tweets %>%
+  filter(is.na(in_response_to_tweet_id) & inbound)
+cat("Found", nrow(first_inbound), "first inbound messages.\n")
+```
+
+## Merging Inbound Messages with Responses
+
+We merge these first inbound messages with the rest of the dataset to capture company responses.
+
+```{r}
+# Merge in all tweets in response
+inbounds_and_outbounds <- first_inbound %>%
+  inner_join(tweets, by = c("tweet_id" = "in_response_to_tweet_id"))
+cat("Found", nrow(inbounds_and_outbounds), "responses.\n")
+```
+
+## Filtering for Company Responses
+
+Finally, we filter the merged data to keep only the responses from companies.
+
+```{r}
+# Filter out cases where reply tweet isn't from company
+inbounds_and_outbounds <- inbounds_and_outbounds %>%
+  filter(inbound.y == FALSE)
+
+# Final output
+cat("Found", nrow(inbounds_and_outbounds), "responses from companies.\n")
+cat("Tweets Preview:\n")
+print(head(inbounds_and_outbounds))
+```
+
+## Conclusion
+
+This analysis identified the initial customer support requests and corresponding responses from companies on Twitter. The processed dataset provides insights into the nature of customer support interactions and can be used for further analysis, such as sentiment analysis or response time predictions.

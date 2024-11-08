@@ -1,0 +1,228 @@
+---
+title: "Customer Support on Twitter Analysis"
+author: "Taha Ababou"
+format: html
+---
+
+Code attribution in Python: **Stuart Axelbrooke · 7y ago**
+<https://www.kaggle.com/code/soaxelbrooke/customer-sentiment-by-brand>
+
+
+## Introduction
+
+This report analyzes customer support interactions on Twitter, focusing on identifying the first inbound messages from customers and their responses from companies. Additionally, we will analyze customer sentiment by brand.
+
+## Load Packages
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidytext)
+library(textdata)
+library(sentimentr)
+library(tidyr)
+```
+
+## Load Data
+
+```{r}
+# Load the dataset
+tweets <- read.csv('../data/customer-support-on-twitter/twcs/twcs.csv')
+str(tweets)
+```
+
+## Data Processing
+
+Convert the `inbound` column to logical format and filter the data to identify the first inbound customer messages that are not replies to previous tweets.
+
+```{r}
+# Convert the 'inbound' column to logical type
+tweets$inbound <- tweets$inbound == "True"
+
+# Pick only inbound tweets that aren't in reply to anything
+first_inbound <- tweets %>%
+  filter(is.na(in_response_to_tweet_id) & inbound)
+cat("Found", nrow(first_inbound), "first inbound messages.\n")
+
+# Merge in all tweets in response
+inbounds_and_outbounds <- first_inbound %>%
+  inner_join(tweets, by = c("tweet_id" = "in_response_to_tweet_id")) %>%
+  filter(inbound.y == FALSE)
+cat("Found", nrow(inbounds_and_outbounds), "responses from companies.\n")
+```
+
+## Customer Sentiment by Brand
+
+This section identifies the top 20 brands by support volume and finds the average sentiment for inbound customer requests to gauge customer sentiment.
+
+```{r}
+# Adjust based on the actual column name, using `text.x` if available
+text_column <- if ("text.x" %in% colnames(inbounds_and_outbounds)) {
+  "text.x"
+} else if ("text" %in% colnames(inbounds_and_outbounds)) {
+  "text"
+} else {
+  stop("Text column not found in the merged data")
+}
+
+# Convert the selected text column to character
+inbounds_and_outbounds[[text_column]] <- as.character(inbounds_and_outbounds[[text_column]])
+
+# Load AFINN sentiment lexicon for sentiment analysis
+sentiments <- get_sentiments("afinn")
+
+# Tokenize and perform sentiment analysis on the identified text column
+sentiment_data <- inbounds_and_outbounds %>%
+  unnest_tokens(word, !!sym(text_column)) %>%
+  inner_join(sentiments, by = "word") %>%
+  group_by(tweet_id, author_id.y) %>%
+  summarize(inbound_sentiment = sum(value, na.rm = TRUE))
+```
+
+```{r}
+# Identify top 20 brands by volume
+top_support_providers <- sentiment_data %>%
+  count(author_id.y, sort = TRUE) %>%
+  top_n(20, n) %>%
+  pull(author_id.y)
+
+head(top_support_providers)
+
+```
+
+
+```{r}
+# Load data.table package
+library(data.table)
+
+# Convert `sentiment_data` to a data.table
+setDT(sentiment_data)
+
+# Calculate the volume for each brand and order by descending count
+brand_volume <- sentiment_data[, .N, by = author_id.y][order(-N)]
+
+# Select only the top 20 brands by volume
+top_20_brands <- head(brand_volume, 20)
+
+# Convert back to `data.frame` for ggplot2
+top_20_brands <- as.data.frame(top_20_brands)
+
+# Plot Top 20 Brands by Volume
+library(ggplot2)
+ggplot(top_20_brands, aes(x = reorder(author_id.y, N), y = N)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 20 Brands by Volume", x = "Brand", y = "Volume")
+
+```
+
+```{r}
+# Load data.table package
+library(data.table)
+
+# Convert `sentiment_data` to a data.table
+setDT(sentiment_data)
+
+# Calculate average sentiment for each brand in `top_support_providers`
+sentiment_summary <- sentiment_data[author_id.y %in% top_support_providers, 
+                                    .(avg_sentiment = mean(inbound_sentiment, na.rm = TRUE)), 
+                                    by = author_id.y][order(avg_sentiment)]
+
+# Select the top 20 brands with the most positive sentiment (highest avg_sentiment)
+top_20_positive <- tail(sentiment_summary, 20)
+
+# Select the worst 20 brands with the most negative sentiment (lowest avg_sentiment)
+worst_20_negative <- head(sentiment_summary, 20)
+
+# Convert both to data.frames for ggplot2
+top_20_positive <- as.data.frame(top_20_positive)
+worst_20_negative <- as.data.frame(worst_20_negative)
+
+# Plot Top 20 Positive Brands by Sentiment
+library(ggplot2)
+ggplot(top_20_positive, aes(x = reorder(author_id.y, avg_sentiment), y = avg_sentiment)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 20 Brands by Positive Sentiment", x = "Brand", y = "Average Sentiment")
+
+# Plot Worst 20 Negative Brands by Sentiment
+ggplot(worst_20_negative, aes(x = reorder(author_id.y, avg_sentiment), y = avg_sentiment)) +
+  geom_bar(stat = "identity", fill = "red") +
+  coord_flip() +
+  labs(title = "Worst 20 Brands by Negative Sentiment", x = "Brand", y = "Average Sentiment")
+
+```
+
+## Case Study: Apple Support Volume & Sentiment
+
+We analyze \@AppleSupport tweets around the launch of the iPhone X to observe trends in customer sentiment and volume over time.
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidytext)
+library(textdata)
+
+# Ensure 'created_at.x' is in POSIXct date-time format
+inbounds_and_outbounds <- inbounds_and_outbounds %>%
+  mutate(created_at.x = as.POSIXct(created_at.x, format = "%a %b %d %H:%M:%S %z %Y", tz = "UTC"))
+
+# Filter for tweets from @AppleSupport after October 7, 2017
+apple_tweets <- inbounds_and_outbounds %>%
+  filter(author_id.y == "AppleSupport" & created_at.x >= as.POSIXct("2017-10-07", tz = "UTC"))
+
+# Convert text to character if needed
+apple_tweets$text.x <- as.character(apple_tweets$text.x)
+
+# Load the AFINN lexicon for sentiment analysis
+afinn <- get_sentiments("afinn")
+
+# Calculate sentiment for each tweet
+apple_tweets <- apple_tweets %>%
+  unnest_tokens(word, text.x) %>%
+  inner_join(afinn, by = "word") %>%
+  group_by(tweet_id, created_at.x) %>%
+  summarize(inbound_sentiment = mean(value, na.rm = TRUE)) %>%
+  ungroup()
+
+# Calculate daily average sentiment and tweet volume
+daily_summary <- apple_tweets %>%
+  mutate(date = as.Date(created_at.x)) %>%
+  group_by(date) %>%
+  summarize(
+    avg_sentiment = mean(inbound_sentiment, na.rm = TRUE),
+    tweet_volume = n()
+  ) %>%
+  ungroup()
+
+# Plot Daily Tweet Volume
+ggplot(daily_summary, aes(x = date, y = tweet_volume)) +
+  geom_col(fill = "lightblue") +
+  labs(
+    title = "@AppleSupport Daily Inbound Tweet Volume Post iPhone X Launch",
+    x = "Date",
+    y = "Number of Inbound Tweets"
+  ) +
+  theme_minimal()
+
+# Plot Daily Average Sentiment
+ggplot(daily_summary, aes(x = date, y = avg_sentiment)) +
+  geom_line(color = "red") +
+  geom_smooth(method = "loess", color = "blue", fill = "lightblue", se = TRUE) +
+  labs(
+    title = "@AppleSupport Daily Average Sentiment Post iPhone X Launch",
+    x = "Date",
+    y = "Average Sentiment"
+  ) +
+  theme_minimal()
+
+
+```
+
+## Conclusion
+
+This analysis identifies initial customer support requests and corresponding responses from companies on Twitter. Additionally, it provides sentiment insights for the top 20 brands and examines sentiment trends over time for Apple Support around the iPhone X launch. This data can be used for further sentiment analysis, response optimization, and other insights for customer support improvement.

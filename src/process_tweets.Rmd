@@ -1,0 +1,42 @@
+```{r}
+""" 
+    A kernel posted on Kaggle that shows how to pull just the first consumer request and
+    company response from the dataset.
+    
+    Original code attribution: Stuart Axelbrooke -> https://www.kaggle.com/code/soaxelbrooke/first-inbound-and-response-tweets/script
+"""
+```
+
+```{r}
+# Load necessary library
+library(dplyr)
+
+# Load the dataset
+tweets <- read.csv('../data/customer-support-on-twitter/twcs/twcs.csv')
+```
+
+```{r}
+# Convert the 'inbound' column to logical type
+tweets$inbound <- tweets$inbound == "True"
+
+# Pick only inbound tweets that aren't in reply to anything
+first_inbound <- tweets %>%
+  filter(is.na(in_response_to_tweet_id) & inbound)
+cat("Found", nrow(first_inbound), "first inbound messages.\n")
+
+# Merge in all tweets in response
+inbounds_and_outbounds <- first_inbound %>%
+  inner_join(tweets, by = c("tweet_id" = "in_response_to_tweet_id"))
+cat("Found", nrow(inbounds_and_outbounds), "responses.\n")
+
+# Filter out cases where reply tweet isn't from company
+inbounds_and_outbounds <- inbounds_and_outbounds %>%
+  filter(inbound.y == FALSE)
+
+# Final output
+cat("Found", nrow(inbounds_and_outbounds), "responses from companies.\n")
+cat("Tweets Preview:\n")
+print(head(inbounds_and_outbounds))
+
+
+```
