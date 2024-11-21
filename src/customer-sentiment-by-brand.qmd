@@ -14,7 +14,7 @@ This report analyzes customer support interactions on Twitter, focusing on ident
 
 ## Load Packages
 
-```{r}
+```{r setup, include=FALSE}
 # Load necessary libraries
 library(dplyr)
 library(ggplot2)
@@ -29,8 +29,61 @@ library(tidyr)
 
 ```{r}
 # Load the dataset
-tweets <- read.csv('../data/customer-support-on-twitter/twcs/twcs.csv')
-str(tweets)
+tweets_original <- read.csv('../data/customer-support-on-twitter/twcs/twcs.csv')
+str(tweets_original)
+```
+## Pooling
+
+### No Pooling
+
+For no pooling, split the dataset by author_id so that each subset contains data for a single author. This will allow you to analyze each author independently.
+
+```{r}
+# Load necessary packages
+library(dplyr)
+
+# Split the data by author_id
+no_pooling_data <- split(tweets, tweets$author_id)
+
+# Example: Access data for a specific author
+no_pooling_data[["sprintcare"]]
+
+
+```
+
+### Partial Pooling
+
+For partial pooling, you can use a mixed-effects model with author_id as a random effect. This will create estimates for each author that are influenced by the overall distribution.
+
+```{r}
+# Load the lme4 package for mixed-effects modeling
+library(lme4)
+
+# Fit a partial pooling model
+# Assuming `response` is the outcome variable you want to model
+# Replace 'response' with the name of your outcome variable
+partial_pooling_model <- lmer(response ~ (1 | author_id), data = tweets)
+
+# View model summary
+summary(partial_pooling_model)
+
+```
+
+
+### Complete Pooling
+
+For complete pooling, you ignore author_id and fit a model to the entire dataset as if it were a single group.
+
+```{r}
+# Fit a complete pooling model
+# Assuming `response` is the outcome variable you want to model
+# Replace 'response' with the name of your outcome variable
+complete_pooling_model <- lm(text ~ 1, data = tweets)
+
+# View model summary
+summary(complete_pooling_model)
+
+
 ```
 
 ## Data Processing

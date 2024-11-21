@@ -1,0 +1,55 @@
+### Customer Support by Brand
+
+An analysis of customer support interactions by specific brands was
+conducted to identify brands with the most negative and positive
+customer sentiments. This examination provides a clearer understanding
+of brand-specific support performance and areas for improvement.
+
+```{r include=FALSE, echo=FALSE}
+# Calculate average sentiment by brand
+sentiment_summary <- tweets %>%
+  group_by(author_id) %>%
+  summarise(avg_sentiment = mean(sentiment_score, na.rm = TRUE)) %>%
+  arrange(avg_sentiment)
+
+# Select top 20 positive and top 20 negative brands
+top_20_positive <- sentiment_summary %>%
+  top_n(20, avg_sentiment)
+
+worst_20_negative <- sentiment_summary %>%
+  top_n(-20, avg_sentiment)
+```
+
+#### Top 20 Brands by Positive Sentiment
+
+```{r include=FALSE, echo=FALSE}
+# Plot Top 20 Positive Brands
+ggplot(top_20_positive, aes(x = reorder(author_id, avg_sentiment), y = avg_sentiment)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 20 Brands by Positive Sentiment", x = "Brand", y = "Average Sentiment") +
+  theme_minimal()
+
+# [Graph: Top 20 Brands by Positive Sentiment]
+```
+
+The top 20 brands with the highest average positive sentiment scores
+were identified. These brands demonstrate effective customer support
+strategies that foster positive customer experiences.
+
+#### Worst 20 Brands by Negative Sentiment
+
+```{r include=FALSE, echo=FALSE}
+# Plot Worst 20 Negative Brands
+ggplot(worst_20_negative, aes(x = reorder(author_id, avg_sentiment), y = avg_sentiment)) +
+  geom_bar(stat = "identity", fill = "red") +
+  coord_flip() +
+  labs(title = "Worst 20 Brands by Negative Sentiment", x = "Brand", y = "Average Sentiment") +
+  theme_minimal()
+
+# [Graph: Worst 20 Brands by Negative Sentiment]
+```
+
+The worst 20 brands with the lowest average negative sentiment scores
+were identified. These brands may need to address underlying issues to
+improve customer satisfaction and support effectiveness.

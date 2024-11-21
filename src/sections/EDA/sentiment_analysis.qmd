@@ -1,0 +1,16 @@
+### Sentiment Analysis
+
+The distribution of sentiment categories showed a higher prevalence of
+neutral and negative sentiments. Tweets categorized as negative tended
+to receive more replies compared to positive ones, indicating that
+customers are more likely to seek support when experiencing issues.
+
+```{r include=FALSE, echo=FALSE}
+# Boxplot of reply counts by sentiment category
+ggplot(tweets, aes(x = sentiment_category, y = reply_count)) +
+  geom_boxplot(fill = "salmon") +
+  labs(title = "Replies by Sentiment Category", x = "Sentiment", y = "Number of Replies") +
+  theme_minimal()
+
+# [Graph: Boxplot of Replies by Sentiment Category]
+```

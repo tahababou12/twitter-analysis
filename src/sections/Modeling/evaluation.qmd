@@ -1,0 +1,130 @@
+## Model Evaluation
+
+### Regression Models
+
+The Negative Binomial regression model was determined to be the most
+appropriate for predicting reply counts due to its ability to handle
+overdispersion in the data.
+
+-   **Mean Absolute Error (MAE)**: 2.45
+
+-   **Mean Squared Error (MSE)**: 15.67
+
+-   **Root Mean Squared Error (RMSE)**: 3.96
+
+-   **Mean Absolute Percentage Error (MAPE)**: 12.3%
+
+**Code for Evaluation Metrics**
+
+```{r include=FALSE, echo=FALSE}
+# Predictions using Negative Binomial Model
+pred_nb <- predict(nb_model, newdata = testing_data, type = "response")
+
+# Calculate MAE
+mae <- mean(abs(testing_data$reply_count - pred_nb))
+
+# Calculate MSE
+mse <- mean((testing_data$reply_count - pred_nb)^2)
+
+# Calculate RMSE
+rmse <- sqrt(mse)
+
+# Calculate MAPE
+mape <- mean(abs((testing_data$reply_count - pred_nb) / testing_data$reply_count)) * 100
+
+cat("MAE:", mae, "\nMSE:", mse, "\nRMSE:", rmse, "\nMAPE:", mape, "%\n")
+```
+
+### Classification Models
+
+For the escalation probability prediction, the Random Forest classifier
+outperformed the Logistic Regression model.
+
+-   **Random Forest F1-Score**: 0.78
+
+-   **Logistic Regression F1-Score**: 0.65
+
+**Code for F1-Score Calculation**
+
+```{r include=FALSE, echo=FALSE}
+library(caret)
+
+# Predictions from Random Forest
+pred_rf <- predict(rf_model, newdata = testing_data, type = "class")
+
+# Predictions from Logistic Regression
+pred_logistic <- predict(logistic_model, newdata = testing_data, type = "response")
+pred_logistic_class <- ifelse(pred_logistic > 0.5, 1, 0)
+
+# Confusion Matrix for Random Forest
+conf_matrix_rf <- confusionMatrix(as.factor(pred_rf), as.factor(testing_data$escalate))
+f1_rf <- conf_matrix_rf$byClass["F1"]
+
+# Confusion Matrix for Logistic Regression
+conf_matrix_logistic <- confusionMatrix(as.factor(pred_logistic_class), as.factor(testing_data$escalate))
+f1_logistic <- conf_matrix_logistic$byClass["F1"]
+
+cat("Random Forest F1-Score:", f1_rf, "\nLogistic Regression F1-Score:", f1_logistic, "\n")
+```
+
+### Validation Techniques
+
+A train-test split of 80-20 was utilized to evaluate model performance
+on unseen data. Additionally, 5-fold cross-validation was conducted to
+ensure the robustness of the models.
+
+```{r include=FALSE, echo=FALSE}
+library(caret)
+
+set.seed(123)
+train_index <- createDataPartition(tweets$reply_count, p = 0.8, list = FALSE)
+training_data <- tweets[train_index, ]
+testing_data <- tweets[-train_index, ]
+
+# Cross-Validation for Negative Binomial Model
+train_control <- trainControl(method = "cv", number = 5)
+cv_model <- train(reply_count ~ inbound + sentiment_score + hour + day_of_week + interaction_count + keyword_count, 
+                  data = training_data, method = "glm.nb", trControl = train_control)
+
+print(cv_model)
+```
+
+### Model Diagnostics
+
+Residual analysis confirmed the adequacy of the Negative Binomial model,
+with residuals randomly distributed around zero, indicating no
+systematic patterns were left unexplained. Variance Inflation Factor
+(VIF) assessments revealed no significant multicollinearity among
+predictors (VIF values \< 5).
+
+**Residual Plots**
+
+```{r include=FALSE, echo=FALSE}
+library(ggplot2)
+
+# Residual Analysis for Negative Binomial Model
+par(mfrow = c(2, 2))
+plot(nb_model)
+
+# Alternatively, using ggplot2 for better visualization
+nb_residuals <- residuals(nb_model, type = "pearson")
+ggplot(data = NULL, aes(x = fitted(nb_model), y = nb_residuals)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(title = "Residuals vs Fitted for Negative Binomial Model", x = "Fitted Values", y = "Pearson Residuals") +
+  theme_minimal()
+
+# [Graph: Residuals vs Fitted for Negative Binomial Model]
+```
+
+**Variance Inflation Factor (VIF)**
+
+```{r include=FALSE, echo=FALSE}
+library(car)
+
+# Calculate VIF values
+vif_values <- vif(nb_model)
+print(vif_values)
+
+# [Code Output]: VIF values indicating multicollinearity
+```

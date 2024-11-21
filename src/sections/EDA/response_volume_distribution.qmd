@@ -1,0 +1,26 @@
+### Response Volume Distribution
+
+The distribution of the number of replies per tweet was visualized using
+a histogram with a log-transformed x-axis to accommodate skewness. The
+analysis revealed that while most tweets received a low number of
+replies, a significant portion experienced high engagement, indicating
+the presence of outliers and overdispersion.
+
+```{r include=FALSE, echo=FALSE}
+#library(ggplot2)
+
+# Calculate reply counts for each tweet
+reply_counts <- tweets %>%
+  group_by(tweet_id) %>%
+  summarise(reply_count = n())
+
+# Plot histogram of reply counts with log transformation
+ggplot(reply_counts, aes(x = reply_count)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black") +
+  scale_x_continuous(trans = 'log1p') +
+  labs(title = "Distribution of Reply Counts", x = "Number of Replies", y = "Frequency") +
+  theme_minimal()
+
+# [Graph: Histogram of Reply Counts]
+
+```

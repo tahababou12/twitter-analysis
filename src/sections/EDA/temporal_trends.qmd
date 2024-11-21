@@ -1,0 +1,17 @@
+### Temporal Trends
+
+Analysis revealed that response volumes and sentiments vary
+significantly by time of day and day of the week. Tweets sent during
+peak hours (9 AM to 5 PM) tended to receive more replies, suggesting
+that support teams are more active during these periods. Additionally,
+weekends showed different engagement patterns compared to weekdays.
+
+```{r include=FALSE, echo=FALSE}
+# Boxplot of reply counts by hour of day
+ggplot(tweets, aes(x = factor(hour), y = reply_count)) +
+  geom_boxplot(fill = "lightgreen", outlier.alpha = 0.1) +
+  labs(title = "Replies by Hour of Day", x = "Hour", y = "Number of Replies") +
+  theme_minimal()
+
+# [Graph: Boxplot of Replies by Hour of Day]
+```
