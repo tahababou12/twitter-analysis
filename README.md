@@ -105,7 +105,7 @@ Read the full research paper [here](./docs/Final_Paper_Twitter_Analysis.pdf).
 
 If you use this repository or reference the paper, please cite:
 
-```         
+```bibtex         
 @misc{ababou2024twitter,
   title={Predicting Customer Support Engagement on Twitter Using Hierarchical Modeling and Sentiment Analysis},
   author={Taha H. Ababou},
