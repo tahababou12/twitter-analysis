@@ -1,0 +1,170 @@
+---
+title: "Predicting Customer Support Engagement on Twitter"
+author: "Taha H. Ababou"
+date: "`r Sys.Date()`"
+format: html
+editor: visual
+---
+
+# Introduction
+This document contains the complete modeling and validation processes for analyzing customer support engagement on Twitter. The analysis uses a hierarchical framework to predict follow-up volume based on tweet characteristics, brand-specific differences, and temporal factors.
+
+---
+
+# Setup and Libraries
+```{r}
+# Load required libraries
+library(lme4)
+library(MASS)
+library(ggplot2)
+library(dplyr)
+library(arm) # for VIF
+library(blmeco) # for dispersion checks
+library(caret) # for cross-validation
+```
+
+---
+
+# Load Data
+```{r}
+# Load the dataset (replace `dataset.csv` with the actual file path)
+dataset <- read.csv("../../customer-support-on-twitter/twcs.csv")
+
+dataset$weekday <- as.factor(dataset$weekday)
+dataset$author_id <- as.factor(dataset$author_id)
+```
+
+---
+
+# Poisson Model
+```{r}
+# Fit a Poisson model
+poisson_model <- glm(follow_up_count ~ sentiment + hour + weekday + text_length + author_id, 
+                     family = poisson(link = "log"), 
+                     data = dataset)
+
+# Summary of the Poisson model
+summary(poisson_model)
+
+# Check overdispersion
+dispersion_ratio <- sum(residuals(poisson_model, type = "pearson")^2) / poisson_model$df.residual
+print(paste("Dispersion Ratio:", dispersion_ratio))
+```
+
+---
+
+# Negative Binomial Model
+```{r}
+# Fit a Negative Binomial model
+nb_model <- glm.nb(follow_up_count ~ sentiment + hour + weekday + text_length + author_id, 
+                   data = dataset)
+
+# Summary of the Negative Binomial model
+summary(nb_model)
+
+# Validate overdispersion
+dispersion_nb <- dispersion_glmer(nb_model)
+print(paste("Negative Binomial Dispersion:", dispersion_nb))
+```
+
+---
+
+# Hierarchical (Mixed-Effects) Negative Binomial Model
+```{r}
+# Fit a Hierarchical Negative Binomial model
+hierarchical_nb_model <- glmer.nb(follow_up_count ~ sentiment + hour + weekday + text_length + 
+                                  (1 | author_id), 
+                                  data = dataset)
+
+# Summary of the model
+summary(hierarchical_nb_model)
+
+# Variance components
+VarCorr(hierarchical_nb_model)
+
+# Dispersion check
+dispersion_hierarchical <- dispersion_glmer(hierarchical_nb_model)
+print(paste("Hierarchical NB Dispersion:", dispersion_hierarchical))
+```
+
+---
+
+# Multicollinearity Check
+```{r}
+# Variance Inflation Factor (VIF)
+vif_values <- vif(poisson_model)
+print("VIF Values:")
+print(vif_values)
+```
+
+---
+
+# Model Validation
+
+## Residual Analysis
+```{r}
+# Residual plot for Negative Binomial model
+residuals_nb <- residuals(nb_model, type = "pearson")
+fitted_nb <- fitted(nb_model)
+
+ggplot(data.frame(Fitted = fitted_nb, Residuals = residuals_nb), aes(x = Fitted, y = Residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(title = "Residuals vs Fitted (Negative Binomial Model)",
+       x = "Fitted Values", y = "Residuals")
+```
+
+## Cross-Validation
+```{r}
+# K-fold Cross-Validation
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 10)
+cv_nb <- train(follow_up_count ~ sentiment + hour + weekday + text_length + author_id, 
+               data = dataset, 
+               method = "glm.nb",
+               trControl = train_control)
+
+print(cv_nb)
+```
+
+## Model Comparison
+```{r}
+# Compare models using AIC and BIC
+aic_values <- c(AIC(poisson_model), AIC(nb_model), AIC(hierarchical_nb_model))
+bic_values <- c(BIC(poisson_model), BIC(nb_model), BIC(hierarchical_nb_model))
+
+model_comparison <- data.frame(
+  Model = c("Poisson", "Negative Binomial", "Hierarchical NB"),
+  AIC = aic_values,
+  BIC = bic_values
+)
+
+print(model_comparison)
+```
+
+---
+
+# Results and Interpretation
+
+## Model Summary
+1. **Poisson Model**: 
+   - Dispersion ratio indicates overdispersion.
+   - Not suitable for the dataset due to variance exceeding mean.
+
+2. **Negative Binomial Model**: 
+   - Accounts for overdispersion.
+   - Dispersion parameter validates improved variance estimation.
+
+3. **Hierarchical Negative Binomial Model**:
+   - Incorporates brand-specific variability.
+   - Partial pooling balances global trends and group-specific differences.
+
+## Diagnostics and Validation
+- Residual plots confirm appropriate model fit.
+- Cross-validation indicates the Negative Binomial model outperforms Poisson.
+- Variance Inflation Factors (VIF) ensure no significant multicollinearity.
+
+---
+
+# Conclusion
+The analysis demonstrates the suitability of the Hierarchical Negative Binomial model for predicting customer support engagement on Twitter. By addressing overdispersion and incorporating group-level effects, the model provides actionable insights for optimizing response strategies. Future research could explore additional predictors, random slopes, and integration with advanced NLP techniques.

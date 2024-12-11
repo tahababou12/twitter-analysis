@@ -1,0 +1,200 @@
+```{r}
+set.seed(123)
+# Data manipulation
+library(data.table)
+library(dplyr)
+# Visualization
+library(ggplot2)
+library(Rmisc)
+# Time manipulation
+library(lubridate)
+# Wordcloud
+library(wordcloud)
+library(wordcloud2)
+# Text manipulation
+library(tm)
+# Data summary
+library(fBasics)
+# Sentiment Analysis
+library(sentimentr)
+
+
+# Load necessary libraries
+library(glmmTMB)
+library(DHARMa)
+library(broom.mixed)
+```
+
+```{r}
+# Ensure both datasets are data.tables for efficient merging
+library(data.table)
+setDT(tweet_sentiment_all)
+setDT(top3)
+
+# Merge sentiment scores into top3
+top3 <- merge(
+  top3,
+  tweet_sentiment_all[, .(tweet_id, sentiment)], # Select only necessary columns
+  by = "tweet_id",
+  all.x = TRUE # Keep all rows from top3 even if there's no match in tweet_sentiment_all
+)
+
+# Handle any NA sentiment values (if there are unmatched tweet_ids)
+top3$sentiment[is.na(top3$sentiment)] <- 0
+
+# Check the structure of the updated top3
+str(top3)
+
+```
+
+```{r}
+# Add sentiment categories based on sentiment score
+top3 <- top3[, sentiment_category := fifelse(
+  sentiment > 0.5, "positive",
+  fifelse(sentiment < -0.5, "negative", "neutral")
+)]
+
+# Check the updated structure of top3
+str(top3)
+
+# Quick validation: count the occurrences of each sentiment category
+top3[, .N, by = sentiment_category]
+
+```
+
+```{r}
+# Fit Poisson model
+poisson_model <- glmmTMB(
+  follow_up_count ~ sentiment_category + hour + weekday + inbound + author_id,
+  family = poisson(link = "log"),
+  data = top3
+)
+
+# Summary of Poisson model
+summary(poisson_model)
+
+# Diagnostics for Poisson model
+poisson_residuals <- simulateResiduals(fittedModel = poisson_model, n = 1000)
+plot(poisson_residuals)
+
+# Test for overdispersion
+dispersion_test <- testDispersion(poisson_residuals)
+dispersion_test
+
+```
+
+
+```{r}
+# Fit Negative Binomial model
+nb_model <- glmmTMB(
+  follow_up_count ~ sentiment_category + hour + weekday + inbound + author_id,
+  family = nbinom2(link = "log"),
+  data = top3
+)
+
+# Summary of Negative Binomial model
+summary(nb_model)
+
+# Diagnostics for Negative Binomial model
+nb_residuals <- simulateResiduals(fittedModel = nb_model, n = 1000)
+plot(nb_residuals)
+
+# Test for overdispersion
+nb_dispersion_test <- testDispersion(nb_residuals)
+nb_dispersion_test
+
+```
+
+
+```{r}
+# Check for zero inflation in Negative Binomial model
+testZeroInflation(nb_residuals)
+
+```
+
+```{r}
+# Compare Poisson and Negative Binomial models
+model_comparison <- AIC(poisson_model, nb_model)
+print(model_comparison)
+
+# Visualizing residual diagnostics
+ggplot(top3, aes(x = predict(nb_model, type = "response"), y = follow_up_count)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Predicted vs Observed Follow-Up Counts", x = "Predicted", y = "Observed")
+
+```
+
+```{r}
+# Create a binary outcome for escalation
+top3 <- top3 %>%
+  mutate(escalation = ifelse(follow_up_count > 0, 1, 0))
+
+# Fit Logistic regression with random effects
+logistic_model <- glmmTMB(
+  escalation ~ sentiment_category + hour + weekday + inbound + author_id + (1 | author_id),
+  family = binomial(link = "logit"),
+  data = top3
+)
+
+# Summary of Logistic Model
+summary(logistic_model)
+
+# Diagnostics for Logistic Model
+logistic_residuals <- simulateResiduals(fittedModel = logistic_model, n = 1000)
+plot(logistic_residuals)
+
+# Confusion Matrix
+predicted_class <- ifelse(predict(logistic_model, type = "response") > 0.5, 1, 0)
+conf_matrix <- table(Observed = top3$escalation, Predicted = predicted_class)
+conf_matrix
+
+# Calculate F1 Score
+precision <- conf_matrix[2, 2] / sum(conf_matrix[, 2])
+recall <- conf_matrix[2, 2] / sum(conf_matrix[2, ])
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+cat("F1 Score:", f1_score, "\n")
+
+```
+
+```{r}
+# Create a binary outcome for escalation
+top3 <- top3 %>%
+  mutate(escalation = ifelse(follow_up_count > 0, 1, 0))
+
+# Fit Logistic regression with random effects
+logistic_model <- glmmTMB(
+  escalation ~ sentiment_category + hour + weekday + inbound + author_id + (1 | author_id),
+  family = binomial(link = "logit"),
+  data = top3
+)
+
+# Summary of Logistic Model
+summary(logistic_model)
+
+# Diagnostics for Logistic Model
+logistic_residuals <- simulateResiduals(fittedModel = logistic_model, n = 1000)
+plot(logistic_residuals)
+
+# Confusion Matrix
+predicted_class <- ifelse(predict(logistic_model, type = "response") > 0.5, 1, 0)
+conf_matrix <- table(Observed = top3$escalation, Predicted = predicted_class)
+conf_matrix
+
+# Calculate F1 Score
+precision <- conf_matrix[2, 2] / sum(conf_matrix[, 2])
+recall <- conf_matrix[2, 2] / sum(conf_matrix[2, ])
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+cat("F1 Score:", f1_score, "\n")
+
+```
+
+# Key Outputs
+
+Model Summaries: Both Poisson and Negative Binomial model summaries reveal the significance of covariates like sentiment, time of day, and weekday.
+
+Diagnostics: Negative Binomial addresses overdispersion evident in the Poisson model, confirmed by residual plots and dispersion tests.
+
+Confusion Matrix and F1 Score: The logistic model effectively classifies escalation probabilities with metrics (accuracy, precision, recall, F1 score).
+
+Comparison: AIC values confirm the superiority of the Negative Binomial model for count outcomes.

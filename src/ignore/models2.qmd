@@ -1,0 +1,142 @@
+```{r}
+library(dplyr)
+library(lubridate)  # for hour, wday
+library(forcats)    # factor handling
+library(glmmTMB)    # for models
+
+```
+
+```{r}
+top_brands <- c("AmazonHelp","AppleSupport","Uber_Support")
+
+top3 <- tweets %>%
+  filter(author_id %in% top_brands)
+
+```
+
+```{r}
+top3 <- top3 %>%
+  mutate(author_id = factor(author_id, levels = top_brands))
+
+```
+
+```{r}
+top3 <- top3 %>%
+  mutate(inbound = factor(inbound, levels = c(FALSE, TRUE), labels = c("FALSE","TRUE")))
+
+```
+
+```{r}
+top3 <- top3 %>%
+  mutate(sentiment_category = factor(sentiment_category,
+                                     levels = c("Negative","Neutral","Positive")))
+
+```
+
+```{r}
+top3 <- top3 %>% filter(!is.na(sentiment_score))
+
+```
+
+```{r}
+top3 <- top3 %>%
+  mutate(
+    hour = hour(created_at),
+    weekday = wday(created_at, label = TRUE, abbr = TRUE)
+  )
+
+# weekday might be ordered; make it unordered and choose a baseline:
+top3$weekday <- factor(top3$weekday, ordered = FALSE)
+top3$weekday <- relevel(top3$weekday, ref = "Sun") # Choose Sunday as baseline
+
+```
+
+```{r}
+# Step 1: Ensure `tweet_id`, `in_response_to_tweet_id`, and `response_tweet_id` are characters
+top3 <- top3 %>%
+  dplyr::mutate(
+    tweet_id = as.character(tweet_id),
+    in_response_to_tweet_id = as.character(in_response_to_tweet_id),
+    response_tweet_id = as.character(response_tweet_id)
+  )
+
+# Step 2: Expand rows for comma-separated `response_tweet_id`
+response_links <- top3 %>%
+  dplyr::filter(!is.na(response_tweet_id) & response_tweet_id != "") %>%  # Exclude missing or empty values
+  tidyr::separate_rows(response_tweet_id, sep = ",") %>%  # Split multiple response IDs into rows
+  dplyr::mutate(response_tweet_id = trimws(response_tweet_id))  # Remove any extra spaces
+
+# Count follow-ups from `response_tweet_id`
+response_counts <- response_links %>%
+  dplyr::group_by(tweet_id) %>%
+  dplyr::summarise(response_count = dplyr::n(), .groups = "drop")  # Count responses for each `tweet_id`
+
+# Step 3: Count follow-ups from `in_response_to_tweet_id`
+in_response_counts <- top3 %>%
+  dplyr::filter(!is.na(in_response_to_tweet_id) & in_response_to_tweet_id != "") %>%  # Exclude missing or empty values
+  dplyr::group_by(in_response_to_tweet_id) %>%
+  dplyr::summarise(in_response_count = dplyr::n(), .groups = "drop")  # Count responses for each parent `tweet_id`
+
+# Step 4: Combine both counts
+followup_counts <- response_counts %>%
+  dplyr::full_join(in_response_counts, by = c("tweet_id" = "in_response_to_tweet_id")) %>%
+  dplyr::mutate(
+    total_follow_up_count = dplyr::coalesce(response_count, 0) + dplyr::coalesce(in_response_count, 0)  # Sum both counts
+  ) %>%
+  dplyr::select(tweet_id, total_follow_up_count)  # Keep only relevant columns
+
+# Step 5: Join follow-up counts back to the original dataset
+top3 <- top3 %>%
+  dplyr::left_join(followup_counts, by = "tweet_id")
+
+# Replace NA values in `total_follow_up_count` with 0
+top3 <- top3 %>%
+  dplyr::mutate(total_follow_up_count = ifelse(is.na(total_follow_up_count), 0, total_follow_up_count))
+
+```
+
+```{r}
+inbound_tweets <- top3 %>%
+  filter(inbound == "TRUE")
+
+```
+
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+

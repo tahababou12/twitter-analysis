@@ -4,7 +4,7 @@ author: "Taha Ababou"
 format: html
 ---
 
-Code attribution in Python: **Stuart Axelbrooke · 7y ago**
+Code attribution - originally in Python: **Stuart Axelbrooke · 7y ago**
 <https://www.kaggle.com/code/soaxelbrooke/customer-sentiment-by-brand>
 
 

@@ -1,0 +1,369 @@
+<!-- CODE ATTRIBUTION TO DONYOE <> https://www.kaggle.com/code/donyoe/exploring-customer-support-in-twitter/report) -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+![](http://adigaskell.org/wp-content/uploads/2015/08/twitter-customer-service.png)
+
+# Loading libraries and data
+```{r}
+set.seed(123)
+# Data manipulation
+library(data.table)
+library(dplyr)
+# Visualization
+library(ggplot2)
+library(Rmisc)
+# Time manipulation
+library(lubridate)
+# Wordcloud
+library(wordcloud)
+library(wordcloud2)
+# Text manipulation
+library(tm)
+# Data summary
+library(fBasics)
+# Sentiment Analysis
+library(sentimentr)
+
+options(encoding = "UTF-8")
+tweet <- readr::read_csv("../../../data/customer-support-on-twitter/twcs/twcs.csv")
+tweet <- as.data.table(tweet)
+tweet$text <- as.character(tweet$text)
+tweet$inbound <- as.factor(tweet$inbound)
+tweet$response[is.na(tweet$in_response_to_tweet_id)] <- "No"
+tweet$response[!is.na(tweet$in_response_to_tweet_id)] <- "Yes"
+```
+
+# Top twitter users by number of tweets
+```{r}
+ggplot(tweet[,.N,by=author_id][order(-N)][1:15],aes(reorder(author_id,-N),N,fill=author_id))+geom_bar(stat="identity")+geom_label(aes(label=N))+guides(fill="none")+theme(axis.text.x = element_text(angle = 45,hjust = 1))+  labs(title=" Top author_id by number of tweets ")+xlab(NULL)+ylab(NULL)
+```
+
+* We see here that there are two companies that clearly surpass the rest of the other companies in number of tweets, the top two companys are AmazonHelp in the fist position with a big gap with the second that is AppleSupport, company that doubles the number of tweets of the third position.
+
+# Top Authors by response
+```{r}
+topauthors <- tweet[,.N,by=author_id][order(-N)][1:15][,1]
+```
+```{r}
+ggplot(tweet[tweet$author_id%in%topauthors$author_id,.N,by=.(author_id,response)],aes(reorder(author_id,-N),N,fill=response))+geom_bar(stat="identity")+geom_label(aes(label=N))+theme(axis.text.x = element_text(angle = 45,hjust = 1))+  labs(title=" Top author_id by number of tweets ")+xlab(NULL)+ylab(NULL)
+```
+
+* We can see here that the top authors almost exclusively just tweets as a response
+
+# Tweets by date
+```{r}
+# tweet$created_at <-substr(tweet$created_at,start = 5 ,stop = 100)
+tweet$date <-mdy_hms(paste(substr(tweet$created_at,start = 5 ,stop = 10), # Month day
+      substr(tweet$created_at,start = 27 ,stop = 30), # year
+      substr(tweet$created_at,start = 12 ,stop = 19))) # Hour
+
+# p1 <- ggplot(tweet[,.N,by=year(date)][order(year)],aes(x = year,y = N,fill=N))+
+#   geom_bar(stat="identity")+
+#   labs(caption="Donyoe",title="Tweets by Year")
+
+p2 <- ggplot(tweet[,.N,by=month(date,label = T)][order(month)],aes(x = month,y = N,fill=N))+
+  geom_bar(stat="identity")+
+  labs(title="Tweets by Month")
+
+p3 <- ggplot(tweet[,.N,by=wday(date,label = T)][order(wday)],aes(x = wday,y=N,fill=N))+
+  geom_bar(stat="identity")+
+  labs(title="Tweets by Weekdays")
+
+p4 <- ggplot(tweet[,.N,by=.(hour(date),wday(date,label = T))],aes(x = hour,y = N,fill=N))+
+  geom_bar(stat="identity")+
+  labs(title="Tweets by Hour and Weekday")+
+  facet_wrap(~wday)
+```
+```{r}
+layout <- matrix(c(1,2,1,2),1,2,byrow=TRUE)
+multiplot(p2, p3, layout=layout)
+
+ggplot(tweet[,.N,by=.(hour(date),wday(date,label = T),response)],aes(x = hour,y = N,fill=response))+
+  geom_bar(stat="identity")+
+  labs(title="Tweets by Hour and Weekday",subtitle="Counting response")+
+  facet_wrap(~wday)
+```
+
+* If we look at the tweets by month we can see that the main data recolection starts in October.
+* We see that there is a significative difference between saturday and sunday where the number of tweets are significantly lower that the rest of the week.
+* If we see the tweets by hour we see a tendency, the most tweeted hours happend in the evening and decreasing slowly after that. 
+* There is a anomaly in the tendency around 7 am in friday, that could be maybe because its friday and the people are happy about it or also because its friday and they have to ask about a problem they have before the day ends and the weekend starts
+
+
+# Top 3 Authors sentiment{.tabset .tabset-pills}
+```{r}
+sents_eap <- sentiment(tweet$text[tweet$author_id%in%"AmazonHelp"])
+sents_eap <- sents_eap[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+
+sents_hpl <- sentiment(tweet$text[tweet$author_id%in%"AppleSupport"])
+sents_hpl <- sents_hpl[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+
+sents_mws <- sentiment(tweet$text[tweet$author_id%in%"Uber_Support"])
+sents_mws <- sents_mws[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+
+score_eap <- cbind("AmazonHelp",sents_eap$sentiment)
+score_hpl <- cbind("AppleSupport",sents_hpl$sentiment)
+score_mws <- cbind("Uber_Support",sents_mws$sentiment)
+
+all_scores <- as.data.table(rbind(score_eap,score_hpl,score_mws))
+all_scores$V2 <- as.numeric(all_scores$V2)
+colnames(all_scores) <- c("Author","Score")
+```
+```{r}
+ggplot(data=all_scores)+
+  geom_histogram(mapping = aes(x=Score,fill=Author),binwidth = .1)+
+  facet_grid(Author~.)+
+  theme_bw()+scale_fill_brewer(palette = "Set1")+
+  geom_vline(xintercept = 0, color = "coral", size = 1.5, alpha = 0.6, linetype = "longdash") +
+  labs(title="Score by Author")
+```
+
+* Amazon have a significative number of tweets with negative scores, thats different in the other two Authors, Apple and Uber almost not have negative scores, Apple is the most positive Author followed by Uber
+
+## Amazon Help
+```{r}
+sents <- sentiment(tweet$text[tweet$author_id%in%"AmazonHelp"&year(tweet$date)==2017&month(tweet$date)>9])
+sents <- sents[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+```
+```{r}
+# color palette
+cols <- c("#ce472e", "#f05336", "#ffd73e", "#eec73a", "#4ab04a")
+poe_plot <- ggplot(sents, aes(x = tweet$date[tweet$author_id%in%"AmazonHelp"&year(tweet$date)==2017&month(tweet$date)>9], y = sentiment, color = sentiment)) +
+theme_minimal() +geom_smooth()+
+  geom_point(aes(color = sentiment), alpha = 0.8) +
+  geom_hline(yintercept = 1, color = "#4ab04a", size = 1.5, alpha = 0.6, linetype = "longdash") +
+    geom_hline(yintercept = 0, color = "black", size = 1.5, alpha = 0.6, linetype = "longdash") +
+geom_hline(yintercept = -1, color = "#f05336", size = 1.5, alpha = 0.6, linetype = "longdash") +
+  scale_color_gradientn(colors = cols)+theme(legend.position = 'bottom',
+legend.direction = "horizontal",
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+plot.title = element_text(size = 20, face = "bold", vjust = 2, color = 'black', lineheight = 0.8),
+axis.title.x = element_text(size = 16),
+axis.title.y = element_text(size = 16),
+axis.text.y = element_text(size = 8, face = "bold", color = 'black'),
+axis.text.x = element_text(size = 8, face = "bold", color = 'black')) +
+labs(title="Amazon Help Sentiment")+xlab("Year")
+poe_plot
+```
+
+## Apple Support
+```{r}
+sents <- sentiment(tweet$text[tweet$author_id%in%"AppleSupport"&year(tweet$date)==2017&month(tweet$date)>9])
+sents <- sents[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+```
+```{r}
+# color palette
+cols <- c("#ce472e", "#f05336", "#ffd73e", "#eec73a", "#4ab04a")
+poe_plot <- ggplot(sents, aes(x = tweet$date[tweet$author_id%in%"AppleSupport"&year(tweet$date)==2017&month(tweet$date)>9], y = sentiment, color = sentiment)) +
+theme_minimal() +geom_smooth()+
+  geom_point(aes(color = sentiment), alpha = 0.8) +
+  geom_hline(yintercept = 1, color = "#4ab04a", size = 1.5, alpha = 0.6, linetype = "longdash") +
+    geom_hline(yintercept = 0, color = "black", size = 1.5, alpha = 0.6, linetype = "longdash") +
+geom_hline(yintercept = -1, color = "#f05336", size = 1.5, alpha = 0.6, linetype = "longdash") +
+  scale_color_gradientn(colors = cols)+theme(legend.position = 'bottom',
+legend.direction = "horizontal",
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+plot.title = element_text(size = 20, face = "bold", vjust = 2, color = 'black', lineheight = 0.8),
+axis.title.x = element_text(size = 16),
+axis.title.y = element_text(size = 16),
+axis.text.y = element_text(size = 8, face = "bold", color = 'black'),
+axis.text.x = element_text(size = 8, face = "bold", color = 'black')) +
+labs(title="Apple Support Sentiment")+xlab("Year")
+poe_plot
+```
+
+### Apple support hours
+```{r}
+ggplot(tweet[author_id=="AppleSupport",.N,by=.(hour(date),wday(date,label = T))],aes(x = hour,y = N,fill=N))+
+  geom_bar(stat="identity")+
+  labs(title="Apple Tweets by Hour and Weekday")+
+  facet_wrap(~wday)
+```
+
+* Its significative to see that apple is the only company in the Top 3 that have "office work hours"
+
+## Uber Support
+```{r}
+sents <- sentiment(tweet$text[tweet$author_id%in%"Uber_Support"&year(tweet$date)==2017&month(tweet$date)>9])
+sents <- sents[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+```
+```{r}
+# color palette
+cols <- c("#ce472e", "#f05336", "#ffd73e", "#eec73a", "#4ab04a")
+poe_plot <- ggplot(sents, aes(x = tweet$date[tweet$author_id%in%"Uber_Support"&year(tweet$date)==2017&month(tweet$date)>9], y = sentiment, color = sentiment)) +
+theme_minimal() +geom_smooth()+
+  geom_point(aes(color = sentiment), alpha = 0.8) +
+  geom_hline(yintercept = 1, color = "#4ab04a", size = 1.5, alpha = 0.6, linetype = "longdash") +
+    geom_hline(yintercept = 0, color = "black", size = 1.5, alpha = 0.6, linetype = "longdash") +
+geom_hline(yintercept = -1, color = "#f05336", size = 1.5, alpha = 0.6, linetype = "longdash") +
+  scale_color_gradientn(colors = cols)+theme(legend.position = 'bottom',
+legend.direction = "horizontal",
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+plot.title = element_text(size = 20, face = "bold", vjust = 2, color = 'black', lineheight = 0.8),
+axis.title.x = element_text(size = 16),
+axis.title.y = element_text(size = 16),
+axis.text.y = element_text(size = 8, face = "bold", color = 'black'),
+axis.text.x = element_text(size = 8, face = "bold", color = 'black')) +
+labs(title="Uber Support Sentiment")+xlab("Year")
+poe_plot
+```
+
+# Asked to the Big 3
+```{r}
+ask <- tweet[inbound=="TRUE",]
+ask$date <-mdy_hms(paste(substr(ask$created_at,start = 5 ,stop = 10), # Month day
+      substr(ask$created_at,start = 27 ,stop = 30), # year
+      substr(ask$created_at,start = 12 ,stop = 19))) # Hour
+am_ask <- dplyr::matches(match = "@AmazonHelp",vars = ask$text)
+app_ask <- matches(match = "@AppleSupport",vars = ask$text)
+ub_ask <- matches(match = "@Uber_Support",vars = ask$text)
+```
+
+# Top 3 Authors sentiment{.tabset .tabset-pills}
+```{r}
+sents_eap <- sentiment(tweet$text[tweet$author_id%in%"AmazonHelp"])
+sents_eap <- sents_eap[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+
+sents_hpl <- sentiment(tweet$text[tweet$author_id%in%"AppleSupport"])
+sents_hpl <- sents_hpl[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+
+sents_mws <- sentiment(tweet$text[tweet$author_id%in%"Uber_Support"])
+sents_mws <- sents_mws[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+
+score_eap <- cbind("AmazonHelp",sents_eap$sentiment)
+score_hpl <- cbind("AppleSupport",sents_hpl$sentiment)
+score_mws <- cbind("Uber_Support",sents_mws$sentiment)
+
+all_scores <- as.data.table(rbind(score_eap,score_hpl,score_mws))
+all_scores$V2 <- as.numeric(all_scores$V2)
+colnames(all_scores) <- c("Author","Score")
+```
+```{r}
+ggplot(data=all_scores)+
+  geom_histogram(mapping = aes(x=Score,fill=Author),binwidth = .1)+
+  facet_grid(Author~.)+
+  theme_bw()+scale_fill_brewer(palette = "Set1")+
+  geom_vline(xintercept = 0, color = "coral", size = 1.5, alpha = 0.6, linetype = "longdash") +
+  labs(title="Score by Author")
+```
+
+* Amazon is the one with less ask negative scores , thats different in the other two Authors, Apple is the last in sentiment score when he is asked and Uber is the second following Amazon by a close gap
+
+## Asked to Amazon Help
+```{r}
+amazon_ask <- ask[am_ask,]
+amazon_ask$date <-mdy_hms(paste(substr(amazon_ask$created_at,start = 5 ,stop = 10), # Month day
+      substr(amazon_ask$created_at,start = 27 ,stop = 30), # year
+      substr(amazon_ask$created_at,start = 12 ,stop = 19))) # Hour
+
+sents <- sentiment(amazon_ask$text[year(amazon_ask$date)==2017&month(amazon_ask$date)>10])
+sents <- sents[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+```
+```{r}
+# color palette
+cols <- c("#ce472e", "#f05336", "#ffd73e", "#eec73a", "#4ab04a")
+poe_plot <- ggplot(sents, aes(x = amazon_ask$date[year(amazon_ask$date)==2017&month(amazon_ask$date)>10], y = sentiment, color = sentiment)) +
+theme_minimal() +geom_smooth()+
+  geom_point(aes(color = sentiment), alpha = 0.8) +
+  geom_hline(yintercept = 1, color = "#4ab04a", size = 1.5, alpha = 0.6, linetype = "longdash") +
+    geom_hline(yintercept = 0, color = "black", size = 1.5, alpha = 0.6, linetype = "longdash") +
+geom_hline(yintercept = -1, color = "#f05336", size = 1.5, alpha = 0.6, linetype = "longdash") +
+  scale_color_gradientn(colors = cols)+theme(legend.position = 'bottom',
+legend.direction = "horizontal",
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+plot.title = element_text(size = 20, face = "bold", vjust = 2, color = 'black', lineheight = 0.8),
+axis.title.x = element_text(size = 16),
+axis.title.y = element_text(size = 16),
+axis.text.y = element_text(size = 8, face = "bold", color = 'black'),
+axis.text.x = element_text(size = 8, face = "bold", color = 'black')) +
+labs(title="Asked to Amazon Help Sentiment",subtitle="Last months")+xlab("Year")
+poe_plot
+```
+
+## Asked to Apple Help
+```{r}
+apple_ask <- ask[app_ask,]
+apple_ask$date <-mdy_hms(paste(substr(apple_ask$created_at,start = 5 ,stop = 10), # Month day
+      substr(apple_ask$created_at,start = 27 ,stop = 30), # year
+      substr(apple_ask$created_at,start = 12 ,stop = 19))) # Hour
+
+sents <- sentiment(apple_ask$text[year(apple_ask$date)==2017&month(apple_ask$date)>10])
+sents <- sents[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+```
+```{r}
+# color palette
+cols <- c("#ce472e", "#f05336", "#ffd73e", "#eec73a", "#4ab04a")
+poe_plot <- ggplot(sents, aes(x = apple_ask$date[year(apple_ask$date)==2017&month(apple_ask$date)>10], y = sentiment, color = sentiment)) +
+theme_minimal() +geom_smooth()+
+  geom_point(aes(color = sentiment), alpha = 0.8) +
+  geom_hline(yintercept = 1, color = "#4ab04a", size = 1.5, alpha = 0.6, linetype = "longdash") +
+    geom_hline(yintercept = 0, color = "black", size = 1.5, alpha = 0.6, linetype = "longdash") +
+geom_hline(yintercept = -1, color = "#f05336", size = 1.5, alpha = 0.6, linetype = "longdash") +
+  scale_color_gradientn(colors = cols)+theme(legend.position = 'bottom',
+legend.direction = "horizontal",
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+plot.title = element_text(size = 20, face = "bold", vjust = 2, color = 'black', lineheight = 0.8),
+axis.title.x = element_text(size = 16),
+axis.title.y = element_text(size = 16),
+axis.text.y = element_text(size = 8, face = "bold", color = 'black'),
+axis.text.x = element_text(size = 8, face = "bold", color = 'black')) +
+labs(title="Asked to Apple Help Sentiment",subtitle="Last months")+xlab("Year")
+poe_plot
+```
+
+### Apple support hours
+```{r}
+ggplot(tweet[author_id=="AppleSupport",.N,by=.(hour(date),wday(date,label = T))],aes(x = hour,y = N,fill=N))+
+  geom_bar(stat="identity")+
+  labs(title="Apple asks by Hour and Weekday")+
+  facet_wrap(~wday)
+```
+
+* Its significative to see that apple is the only company in the Top 3 that have "office work hours"
+
+## Uber Support
+```{r}
+uber_ask <- ask[ub_ask,]
+uber_ask$date <-mdy_hms(paste(substr(uber_ask$created_at,start = 5 ,stop = 10), # Month day
+      substr(uber_ask$created_at,start = 27 ,stop = 30), # year
+      substr(uber_ask$created_at,start = 12 ,stop = 19))) # Hour
+
+sents <- sentiment(uber_ask$text[year(uber_ask$date)==2017&month(uber_ask$date)>10])
+sents <- sents[,.("word_count"=sum(word_count),"sentiment"=sum(sentiment)),by=element_id]
+```
+```{r}
+# color palette
+cols <- c("#ce472e", "#f05336", "#ffd73e", "#eec73a", "#4ab04a")
+poe_plot <- ggplot(sents, aes(x = uber_ask$date[year(uber_ask$date)==2017&month(uber_ask$date)>10], y = sentiment, color = sentiment)) +
+theme_minimal() +geom_smooth()+
+  geom_point(aes(color = sentiment), alpha = 0.8) +
+  geom_hline(yintercept = 1, color = "#4ab04a", size = 1.5, alpha = 0.6, linetype = "longdash") +
+    geom_hline(yintercept = 0, color = "black", size = 1.5, alpha = 0.6, linetype = "longdash") +
+geom_hline(yintercept = -1, color = "#f05336", size = 1.5, alpha = 0.6, linetype = "longdash") +
+  scale_color_gradientn(colors = cols)+theme(legend.position = 'bottom',
+legend.direction = "horizontal",
+panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(),
+plot.title = element_text(size = 20, face = "bold", vjust = 2, color = 'black', lineheight = 0.8),
+axis.title.x = element_text(size = 16),
+axis.title.y = element_text(size = 16),
+axis.text.y = element_text(size = 8, face = "bold", color = 'black'),
+axis.text.x = element_text(size = 8, face = "bold", color = 'black')) +
+labs(title="Uber Support Sentiment",subtitle="Last months")+xlab("Year")
+poe_plot
+
+```
+
+  * Hope you like it!

@@ -1,0 +1,135 @@
+```{r}
+# Load required packages
+library(dplyr)
+library(lubridate)
+library(forcats)
+library(glmmTMB) # For fitting mixed models (NB, Poisson, logistic)
+library(car)      # For VIF if needed
+# install.packages("anytime") # if needed for date parsing
+
+# Define top 3 brands
+top_brands <- c("AmazonHelp","AppleSupport","Uber_Support")
+
+# Filter tweets to top 3 brands
+top3 <- tweets %>%
+  filter(author_id %in% top_brands)
+
+# Convert author_id to factor
+top3 <- top3 %>%
+  mutate(author_id = factor(author_id, levels = top_brands))
+
+# Convert inbound to factor
+top3 <- top3 %>%
+  mutate(inbound = factor(inbound, levels = c(FALSE, TRUE), labels = c("FALSE","TRUE")))
+
+# Extract hour and weekday from created_at
+top3 <- top3 %>%
+  mutate(
+    hour = hour(created_at),
+    weekday = wday(created_at, label = TRUE, abbr = TRUE) # e.g. Mon, Tue, ...
+  )
+
+# Ensure sentiment_category is a factor with levels: Negative, Neutral, Positive
+# If sentiment_category is character, convert it:
+top3 <- top3 %>%
+  mutate(sentiment_category = factor(sentiment_category, levels = c("Negative","Neutral","Positive")))
+
+# We have sentiment_score already. Ensure no NAs if needed:
+# For modeling, you might drop NAs or impute them:
+top3 <- top3 %>%
+  filter(!is.na(sentiment_score))
+```
+```{r}
+
+# Create follow-up count for each inbound tweet
+# follow_up_count = how many tweets respond to this tweet_id
+# We'll join top3 with itself: tweets that are responses
+response_counts <- top3 %>%
+  filter(!is.na(in_response_to_tweet_id)) %>%
+  dplyr::count(in_response_to_tweet_id, name = "follow_up_count")
+```
+
+```{r}
+# Join back to top3 to get follow_up_count for each tweet_id
+top3 <- top3 %>%
+  left_join(response_counts, by = c("tweet_id" = "in_response_to_tweet_id"))
+
+# Tweets with no responses get NA in follow_up_count, set to 0
+top3$follow_up_count[is.na(top3$follow_up_count)] <- 0
+
+# We only model follow-up volume for inbound tweets (as per your specification)
+# Filter inbound tweets for the count model
+inbound_tweets <- top3 %>%
+  filter(inbound == "TRUE")
+
+# Create escalation variable: 
+# For example, define escalation = 1 if follow_up_count > 1, else 0.
+inbound_tweets <- inbound_tweets %>%
+  mutate(escalation = ifelse(follow_up_count > 1, 1, 0))
+```
+```{r}
+# Prepare variables for the model:
+# Hour is numeric
+# weekday is factor, baseline level is Sunday (for example)
+
+inbound_tweets$weekday <- relevel(inbound_tweets$weekday, ref = "Sun")
+
+
+# sentiment_score is numeric, inbound is factor, brand is factor via author_id
+# If you want brand as a random effect, we won't include brand dummy variables explicitly
+# We'll use author_id as a random intercept in the mixed model.
+```
+
+```{r}
+# FIT MODELS
+
+# 1. Count outcome model (Poisson or NB)
+# Poisson model (try first):
+count_model_poisson <- glmmTMB(
+  follow_up_count ~ sentiment_score + hour + weekday + inbound + (1|author_id),
+  data = inbound_tweets,
+  family = poisson(link = "log")
+)
+
+# Check for overdispersion
+# If overdispersion is large, switch to Negative Binomial
+# For demonstration, let's assume we need NB:
+count_model_nb <- glmmTMB(
+  follow_up_count ~ sentiment_score + hour + weekday + inbound + (1|author_id),
+  data = inbound_tweets,
+  family = nbinom1(link = "log") # nbinom1 or nbinom2 depending on fit
+)
+
+summary(count_model_nb)
+
+# 2. Hierarchical logistic model for escalation
+# Escalation is binary
+escalation_model <- glmmTMB(
+  escalation ~ sentiment_score + hour + weekday + inbound + (1|author_id),
+  data = inbound_tweets,
+  family = binomial(link = "logit")
+)
+
+summary(escalation_model)
+
+# OPTIONAL: Check VIF for multicollinearity (for fixed effects)
+library(car)
+vif(lm(sentiment_score ~ hour + weekday + inbound, data = inbound_tweets)) # a rough check
+# You might need a different approach for VIF with mixed models.
+
+# Additional diagnostics:
+# Residual checks can be performed using DHARMa package
+# install.packages("DHARMa")
+library(DHARMa)
+# Simulate residuals for NB model
+res_nb <- simulateResiduals(count_model_nb)
+plot(res_nb) # check for patterns
+
+# Simulate residuals for escalation model
+res_esc <- simulateResiduals(escalation_model)
+plot(res_esc) # check for patterns
+
+# This code sets up and runs the specified models on your filtered top 3 brands dataset.
+# Adjust the code as needed based on actual data characteristics and modeling decisions.
+
+```

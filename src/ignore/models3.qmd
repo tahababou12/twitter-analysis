@@ -1,0 +1,169 @@
+```{r}
+######################################
+# Load Required Packages
+######################################
+library(dplyr)
+library(lubridate)   # For hour, wday
+library(forcats)     # For factor handling
+library(glmmTMB)     # For hierarchical models (NB, Poisson, logistic)
+# If needed: install.packages("glmmTMB")
+```
+
+```{r}
+######################################
+# Filter to Top 3 Brands and Outbound Tweets
+######################################
+# Define the top 3 brands
+top_brands <- c("AmazonHelp","AppleSupport","Uber_Support")
+
+# Filter the dataset to only these brands and outbound tweets
+# Outbound tweets: inbound == FALSE
+top3 <- tweet %>%
+  filter(author_id %in% top_brands, inbound == FALSE)
+```
+
+```{r}
+######################################
+# Convert Variables to Appropriate Types
+######################################
+# author_id as factor with specified levels
+top3 <- top3 %>%
+  mutate(author_id = factor(author_id, levels = top_brands))
+
+# sentiment_category should be a factor with levels Negative, Neutral, Positive
+top3 <- top3 %>%
+  mutate(sentiment_category = factor(sentiment_category,
+                                     levels = c("Negative","Neutral","Positive")))
+
+# Ensure sentiment_score is numeric and handle NAs
+# If there are NAs, decide whether to drop them:
+top3 <- top3 %>%
+  filter(!is.na(sentiment_score))
+```
+
+```{r}
+######################################
+# Extract Hour and Weekday from created_at
+######################################
+top3 <- top3 %>%
+  mutate(
+    hour = hour(created_at),
+    weekday = wday(created_at, label = TRUE, abbr = TRUE) # returns ordered factor by default
+  )
+
+# Convert weekday to unordered factor and choose a baseline
+top3$weekday <- factor(top3$weekday, ordered = FALSE)
+top3$weekday <- relevel(top3$weekday, ref = "Sun")
+```
+
+```{r}
+######################################
+# Compute follow_up_count
+######################################
+# follow_up_count = how many *customer (inbound == TRUE)* tweets reply to this company (inbound == FALSE) tweet
+# We need to find all tweets with inbound == TRUE and see if their in_response_to_tweet_id matches
+# the tweet_id of our outbound tweet.
+
+# First, extract all tweets that are inbound responses and count how many times they reference each tweet_id
+inbound_responses <- tweets %>%
+  filter(inbound == TRUE, !is.na(in_response_to_tweet_id), in_response_to_tweet_id != 0) %>%
+  group_by(in_response_to_tweet_id) %>%
+  dplyr::summarise(follow_up_count = n(), .groups = "drop")
+
+# Join this follow-up count back to top3 based on tweet_id
+top3 <- top3 %>%
+  left_join(inbound_responses, by = c("tweet_id" = "in_response_to_tweet_id"))
+
+# Tweets with no inbound replies get NA, set to 0
+top3$follow_up_count[is.na(top3$follow_up_count)] <- 0
+```
+
+```{r}
+######################################
+# Define Escalation
+######################################
+# escalated = 1 if follow_up_count >= 2, else 0
+top3 <- top3 %>%
+  mutate(escalated = ifelse(follow_up_count >= 2, 1, 0))
+
+######################################
+# Model Specifications
+######################################
+# We will fit two models:
+# 1) Negative Binomial for follow_up_count
+# 2) Logistic for escalated
+#
+# Both models include brand-level random intercepts (1|author_id).
+# Predictors: sentiment_score, hour, weekday
+# (We no longer use inbound, because we are focusing on outbound tweets only.)
+```
+
+```{r}
+######################################
+# Negative Binomial Model (Follow-Up Volume)
+######################################
+# Start with NB to handle overdispersion
+count_model_nb <- glmmTMB(
+  follow_up_count ~ sentiment_score + hour + weekday + (1|author_id),
+  data = top3,
+  family = nbinom2(link = "log")
+)
+summary(count_model_nb)
+```
+
+```{r}
+######################################
+# Logistic Model (Escalation Probability)
+######################################
+escalation_model <- glmmTMB(
+  escalated ~ sentiment_score + hour + weekday + (1|author_id),
+  data = top3,
+  family = binomial(link = "logit")
+)
+summary(escalation_model)
+```
+
+```{r}
+######################################
+# Model Validation (Optional)
+######################################
+# For dispersion checks in NB model, consider DHARMa package:
+#install.packages("DHARMa")
+library(DHARMa)
+
+# Check residuals for NB model
+res_nb <- simulateResiduals(count_model_nb)
+plot(res_nb)
+
+# Check residuals for logistic model
+res_esc <- simulateResiduals(escalation_model)
+plot(res_esc)
+```
+
+```{r}
+######################################
+# Multicollinearity Check (Optional)
+######################################
+# Since we have factor variables, we can do a rough check:
+# Create a linear model ignoring random effects just to check VIF
+temp_data <- top3 %>%
+  select(sentiment_score, hour, weekday)
+
+# Convert weekday to dummy variables for VIF check:
+lm_for_vif <- lm(sentiment_score ~ hour + weekday, data=temp_data)
+car::vif(lm_for_vif)
+
+# If VIF < 5, no severe multicollinearity.
+
+######################################
+# Interpretation
+######################################
+# count_model_nb: Coefficients show how sentiment, hour, and weekday affect follow_up_count.
+# escalation_model: Coefficients show how sentiment, hour, and weekday affect escalation probability.
+# Random intercepts (1|author_id) capture brand-level differences in baseline engagement.
+
+
+# This code outlines the entire process from data preparation to model fitting,
+# adjusted to the new focus on outbound tweets and their follow-ups.
+
+```
