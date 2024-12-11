@@ -1,9 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: sentence
----
-
 # Predicting Customer Support Engagement on Twitter
 
 ## Overview
